@@ -1,4 +1,3 @@
-# flask_server.py
 import os
 import traceback
 from flask import Flask, request, jsonify
@@ -8,9 +7,8 @@ from datetime import datetime
 from apiKey import my_api_key
 
 app = Flask(__name__)
-CORS(app)  # for development only; lock origins in production
+CORS(app)
 
-# --- Configuration ---
 BASE_URL = os.environ.get("OPENROUTER_BASE_URL",
                           "https://openrouter.ai/api/v1")
 DEFAULT_MODEL = os.environ.get(
@@ -19,30 +17,20 @@ DEFAULT_MODEL = os.environ.get(
 HOST = os.environ.get("FLASK_HOST", "0.0.0.0")
 PORT = int(os.environ.get("FLASK_PORT", 8000))
 
-# --- Client init ---
 client = OpenAI(base_url=BASE_URL, api_key=my_api_key)
 
-# --- In-memory conversation store (for dev) ---
-conversations = {}  # { session_id: [ {role, content}, ... ] }
-
-# --- Helpers ---
+conversations = {}
 
 
 def safe_extract_reply(completion):
-    """
-    Try several common response shapes and return a string reply.
-    """
     try:
-        # preferred accessor used by newer SDKs
         return completion.choices[0].message.content
     except Exception:
         pass
     try:
-        # fallback if older shape
         return completion.choices[0].text
     except Exception:
         pass
-    # as last resort return stringified object
     try:
         return str(completion)
     except Exception:
@@ -54,8 +42,6 @@ def ensure_conversation(session_id):
         conversations[session_id] = [
             {"role": "system", "content": "You are a helpful assistant."}]
     return conversations[session_id]
-
-# --- Routes ---
 
 
 @app.route("/health", methods=["GET"])
@@ -80,7 +66,6 @@ def chat():
 
         app.logger.info("session=%s user_message=%s", session_id, user_text)
 
-        # Call OpenRouter
         completion = client.chat.completions.create(
             model=DEFAULT_MODEL,
             messages=conv,
@@ -102,8 +87,6 @@ def chat():
         app.logger.error("Exception in /chat: %s", traceback.format_exc())
         return jsonify({"error": "server error", "details": str(e)}), 500
 
-# --- Useful dev endpoint: clear conversation (optional) ---
-
 
 @app.route("/clear/<session_id>", methods=["POST", "GET"])
 def clear_session(session_id):
@@ -113,7 +96,6 @@ def clear_session(session_id):
     return jsonify({"ok": False, "message": "session not found"}), 404
 
 
-# --- Main ---
 if __name__ == "__main__":
     app.logger.info("Starting Flask debug server at %s:%d", HOST, PORT)
     app.run(host=HOST, port=PORT, debug=True)

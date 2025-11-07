@@ -5,9 +5,8 @@ from flask_cors import CORS
 app = Flask(__name__)
 CORS(app)
 
-# Configure recognition settings
-ENERGY_THRESHOLD = 300  # Lower value makes it more sensitive
-PAUSE_THRESHOLD = 0.8   # Shorter pause between phrases
+ENERGY_THRESHOLD = 300
+PAUSE_THRESHOLD = 0.8
 DYNAMIC_ENERGY_ADJUSTMENT_DAMPING = 0.15
 DYNAMIC_ENERGY_RATIO = 1.5
 
@@ -15,8 +14,6 @@ DYNAMIC_ENERGY_RATIO = 1.5
 @app.route('/listen', methods=['POST'])
 def listen():
     recognizer = sr.Recognizer()
-
-    # Configure recognizer settings
     recognizer.energy_threshold = ENERGY_THRESHOLD
     recognizer.pause_threshold = PAUSE_THRESHOLD
     recognizer.dynamic_energy_adjustment_damping = DYNAMIC_ENERGY_ADJUSTMENT_DAMPING
@@ -25,29 +22,21 @@ def listen():
     try:
         with sr.Microphone(sample_rate=44100) as source:
             print("Adjusting for ambient noise...")
-            # Longer ambient noise adjustment
             recognizer.adjust_for_ambient_noise(source, duration=2)
-
             print("Listening...")
-            # Record with higher quality settings
             audio = recognizer.listen(
                 source,
-                timeout=15,          # Longer timeout
-                phrase_time_limit=15,  # Longer phrase time
+                timeout=15,
+                phrase_time_limit=15,
             )
-
             print("Processing speech...")
-            # Use more accurate language model
             text = recognizer.recognize_google(
                 audio,
-                language="en-US",    # Specify language
-                show_all=False       # Return best match only
+                language="en-US",
+                show_all=False
             )
-
-            # Clean up the text
             text = text.strip()
             print(f"Recognized: {text}")
-
             return jsonify({"success": True, "text": text})
 
     except sr.WaitTimeoutError:
