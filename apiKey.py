@@ -1,1 +1,1 @@
-my_api_key = "Your-API-Key-Here"
+my_api_key = "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"

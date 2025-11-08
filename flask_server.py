@@ -12,7 +12,7 @@ CORS(app)
 BASE_URL = os.environ.get("OPENROUTER_BASE_URL",
                           "https://openrouter.ai/api/v1")
 DEFAULT_MODEL = os.environ.get(
-    "OPENROUTER_MODEL", "deepseek/deepseek-chat-v3.1")
+    "OPENROUTER_MODEL", "nvidia/nemotron-nano-12b-v2-vl:free")
 
 HOST = os.environ.get("FLASK_HOST", "0.0.0.0")
 PORT = int(os.environ.get("FLASK_PORT", 8000))
