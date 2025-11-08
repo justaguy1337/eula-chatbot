@@ -308,7 +308,7 @@ function Chat() {
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.statusDot} />
-        <Text style={styles.headerTitle}>Impel Chat</Text>
+        <Text style={styles.headerTitle}>Eula Chat</Text>
         <View style={{ width: 16 }} />
       </View>
 
