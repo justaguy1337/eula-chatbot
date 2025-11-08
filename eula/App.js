@@ -1,4 +1,3 @@
-// App.js
 import React, { useEffect, useRef, useState } from "react";
 import {
   View,
@@ -15,10 +14,13 @@ import {
   Modal,
   Animated,
 } from "react-native";
-import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
+import {
+  SafeAreaProvider,
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 
-// Backend
-const BACKEND_URL = "http://10.0.2.2:8000/chat"; // Android AVD
+const BACKEND_URL = "http://10.0.2.2:8000/chat";
 
 const THEME = {
   bg: "#0b0f1a",
@@ -33,13 +35,15 @@ const THEME = {
   danger: "#ef4444",
 };
 
-export default function App() {
+function Chat() {
+  const insets = useSafeAreaInsets();
+
   const [text, setText] = useState("");
   const [messages, setMessages] = useState([
     {
       id: "welcome-1",
       role: "assistant",
-      content: "Hi! \nI’m your Mobile AI Eula. \nAsk me anything 💬",
+      content: "Hi! \nI’m Eula. \nAsk me anything 💬",
       ts: Date.now(),
     },
   ]);
@@ -52,10 +56,9 @@ export default function App() {
 
   const listRef = useRef(null);
 
-  // Always scroll to the latest item
   useEffect(() => {
     const t = setTimeout(
-      () => listRef.current?.scrollToEnd({ animated: true }),
+      () => listRef.current?.scrollToEnd?.({ animated: true }),
       50
     );
     return () => clearTimeout(t);
@@ -85,7 +88,7 @@ export default function App() {
     setMessages((prev) => [...prev, userMessage]);
     setText("");
     setSending(true);
-    setTyping(true); // show typing dots while backend works
+    setTyping(true);
 
     try {
       const res = await fetch(BACKEND_URL, {
@@ -128,6 +131,12 @@ export default function App() {
           ts: Date.now(),
         },
       ]);
+      Alert.alert(
+        "Network error",
+        `Failed to reach backend. Make sure BACKEND_URL is reachable from this device.\n\n${String(
+          err
+        )}`
+      );
     } finally {
       setSending(false);
       setTyping(false);
@@ -183,7 +192,6 @@ export default function App() {
     }
   };
 
-  // Render a single bubble with timestamp, grouped corners
   const renderItem = ({ item, index }) => {
     const prev = messages[index - 1];
     const next = messages[index + 1];
@@ -191,7 +199,6 @@ export default function App() {
     const sameAsPrev = prev && prev.role === item.role;
     const sameAsNext = next && next.role === item.role;
 
-    // Rounded corners logic for grouping
     const bubbleStyle = [
       styles.bubble,
       isUser ? styles.user : styles.bot,
@@ -224,7 +231,6 @@ export default function App() {
     );
   };
 
-  // Typing indicator bubble
   const TypingBubble = () => {
     const dots = useTypingDots(350);
     return (
@@ -236,13 +242,10 @@ export default function App() {
     );
   };
 
-  // Compute safe-area top padding for Android to avoid collision with status bar
   const androidTopPadding =
     Platform.OS === "android" ? StatusBar.currentHeight || 24 : 0;
-  const keyboardVerticalOffset =
-    Platform.OS === "ios" ? 8 : StatusBar.currentHeight || 24;
+  const keyboardVerticalOffset = Platform.OS === "ios" ? 8 : insets.bottom || 0;
 
-  // Define VoiceModal component inside App
   const VoiceModal = () => (
     <Modal
       visible={voiceModalVisible}
@@ -296,76 +299,87 @@ export default function App() {
     </Modal>
   );
 
-  // Wrap the return statement with SafeAreaProvider
   return (
-    <SafeAreaProvider>
-      <SafeAreaView
-        style={[styles.safe, { paddingTop: androidTopPadding }]}
-        edges={["top"]}
+    <SafeAreaView
+      style={[styles.safe, { paddingTop: androidTopPadding }]}
+      edges={["top", "bottom"]}
+    >
+      <StatusBar barStyle="light-content" backgroundColor={THEME.card} />
+      {/* Header */}
+      <View style={styles.header}>
+        <View style={styles.statusDot} />
+        <Text style={styles.headerTitle}>Impel Chat</Text>
+        <View style={{ width: 16 }} />
+      </View>
+
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={keyboardVerticalOffset}
       >
-        <StatusBar barStyle="light-content" backgroundColor={THEME.card} />
-        {/* Header */}
-        <View style={styles.header}>
-          <View style={styles.statusDot} />
-          <Text style={styles.headerTitle}>Impel Chat</Text>
-          <View style={{ width: 16 }} />
+        <View style={styles.chatSurface}>
+          <FlatList
+            ref={listRef}
+            data={messages}
+            renderItem={renderItem}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={{
+              padding: 14,
+              paddingBottom: 8 + Math.max(insets.bottom || 0, 12),
+            }}
+            showsVerticalScrollIndicator={false}
+          />
+          {typing && <TypingBubble />}
         </View>
 
-        <KeyboardAvoidingView
-          style={{ flex: 1 }}
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
-          keyboardVerticalOffset={keyboardVerticalOffset}
+        <View
+          style={[
+            styles.inputRow,
+            { paddingBottom: Math.max(insets.bottom || 0, 8) },
+          ]}
         >
-          <View style={styles.chatSurface}>
-            <FlatList
-              ref={listRef}
-              data={messages}
-              renderItem={renderItem}
-              keyExtractor={(item) => item.id}
-              contentContainerStyle={{ padding: 14, paddingBottom: 8 }}
-              showsVerticalScrollIndicator={false}
-            />
-            {typing && <TypingBubble />}
-          </View>
+          <TextInput
+            style={styles.input}
+            placeholder={sending ? "Sending..." : "Type a message"}
+            placeholderTextColor={THEME.textMuted}
+            value={text}
+            onChangeText={setText}
+            editable={!sending}
+            onSubmitEditing={sendMessage}
+            returnKeyType="send"
+          />
+          <TouchableOpacity
+            onPress={startVoiceInput}
+            style={[styles.micBtn, isRecording && styles.micBtnActive]}
+            disabled={sending}
+          >
+            <Text style={styles.micIcon}>🎤</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={sendMessage}
+            style={[styles.sendBtn, sending && styles.sendBtnDisabled]}
+            disabled={sending}
+            activeOpacity={0.85}
+            accessibilityLabel="Send message"
+          >
+            {sending ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.sendText}>Send</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
 
-          {/* Input bar */}
-          <View style={styles.inputRow}>
-            <TextInput
-              style={styles.input}
-              placeholder={sending ? "Sending..." : "Type a message"}
-              placeholderTextColor={THEME.textMuted}
-              value={text}
-              onChangeText={setText}
-              editable={!sending}
-              onSubmitEditing={sendMessage}
-              returnKeyType="send"
-            />
-            <TouchableOpacity
-              onPress={startVoiceInput}
-              style={[styles.micBtn, isRecording && styles.micBtnActive]}
-              disabled={sending}
-            >
-              <Text style={styles.micIcon}>🎤</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={sendMessage}
-              style={[styles.sendBtn, sending && styles.sendBtnDisabled]}
-              disabled={sending}
-              activeOpacity={0.85}
-              accessibilityLabel="Send message"
-            >
-              {sending ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.sendText}>Send</Text>
-              )}
-            </TouchableOpacity>
-          </View>
-        </KeyboardAvoidingView>
+      <VoiceModal />
+    </SafeAreaView>
+  );
+}
 
-        {/* Voice Input Modal */}
-        <VoiceModal />
-      </SafeAreaView>
+export default function App() {
+  return (
+    <SafeAreaProvider>
+      <Chat />
     </SafeAreaProvider>
   );
 }
@@ -383,7 +397,7 @@ function useTypingDots(speed = 300) {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: THEME.bg },
   header: {
-    height: 64, // increased to give more breathing room
+    height: 64,
     backgroundColor: THEME.card,
     borderBottomWidth: 1,
     borderBottomColor: THEME.border,
@@ -431,7 +445,6 @@ const styles = StyleSheet.create({
   user: { backgroundColor: THEME.user, borderTopRightRadius: 6 },
   bot: { backgroundColor: THEME.bot, borderTopLeftRadius: 6 },
 
-  // Grouping corners: soften top/bottom when chained bubbles from same sender
   roundTopUser: { borderTopRightRadius: 16 },
   roundBottomUser: { borderBottomRightRadius: 6 },
   roundTopBot: { borderTopLeftRadius: 16 },
@@ -576,3 +589,4 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 });
+
