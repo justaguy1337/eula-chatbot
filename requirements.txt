@@ -4,3 +4,4 @@ openai
 SpeechRecognition
 PyAudio
 httpx
+sambanova
