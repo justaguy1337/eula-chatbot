@@ -35,6 +35,59 @@ const THEME = {
   danger: "#ef4444",
 };
 
+const MODELS = [
+  { name: "chatgpt", id: "openai/gpt-oss-20b:free" },
+  { name: "deepseek", id: "deepseek/deepseek-chat-v3.1:free" },
+  { name: "meta", id: "meta-llama/llama-3.3-8b-instruct:free" },
+  { name: "minimax", id: "minimax/minimax-m2:free" },
+  { name: "nemotron", id: "nvidia/nemotron-nano-12b-v2-vl:free" },
+];
+
+function decodeHtmlEntities(str = "") {
+  if (!str) return "";
+  return str
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&#x2F;/g, "/");
+}
+
+function stripMarkdown(md = "") {
+  if (!md) return "";
+
+  let s = md.replace(/<br\s*\/?>/gi, "\n");
+
+  s = s.replace(/<\/?[^>]+(>|$)/g, "");
+
+  s = decodeHtmlEntities(s);
+
+  s = s.replace(/!\[.*?\]\(.*?\)/g, "");
+  s = s.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1");
+
+  s = s.replace(/(\*\*|__)(.*?)\1/g, "$2");
+  s = s.replace(/(\*|_)(.*?)\1/g, "$2");
+  s = s.replace(/`{1,3}(.*?)`{1,3}/g, "$1");
+
+  s = s.replace(/^#{1,6}\s*/gm, "");
+  s = s.replace(/^\s*>+\s?/gm, "");
+
+  s = s.replace(/^\s*[-*+]\s+/gm, "");
+  s = s.replace(/^\s*\d+\.\s+/gm, "");
+
+  s = s.replace(/^[-*_]{3,}$/gm, "");
+
+  s = s
+    .split("\n")
+    .map((ln) => ln.trim())
+    .join("\n")
+    .trim();
+
+  return s;
+}
+
 function Chat() {
   const insets = useSafeAreaInsets();
 
@@ -51,16 +104,21 @@ function Chat() {
   const [typing, setTyping] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [voiceModalVisible, setVoiceModalVisible] = useState(false);
+  const [modelModalVisible, setModelModalVisible] = useState(false);
+  const [selectedModel, setSelectedModel] = useState(MODELS[0]);
 
   const pulseAnim = useRef(new Animated.Value(1)).current;
-
   const listRef = useRef(null);
 
   useEffect(() => {
-    const t = setTimeout(
-      () => listRef.current?.scrollToEnd?.({ animated: true }),
-      50
-    );
+    const t = setTimeout(() => {
+      const ref = listRef.current;
+      if (ref && typeof ref.scrollToEnd === "function") {
+        ref.scrollToEnd({ animated: true });
+      } else if (ref && typeof ref.scrollToOffset === "function") {
+        ref.scrollToOffset({ offset: 99999, animated: true });
+      }
+    }, 50);
     return () => clearTimeout(t);
   }, [messages.length, typing]);
 
@@ -91,35 +149,48 @@ function Chat() {
     setTyping(true);
 
     try {
+      const payload = {
+        session_id: "mobile-session-1",
+        message: content,
+        model: selectedModel?.name,
+      };
+
       const res = await fetch(BACKEND_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          session_id: "mobile-session-1",
-          message: content,
-        }),
+        body: JSON.stringify(payload),
       });
 
-      const data = await res.json();
+      let data;
+      try {
+        data = await res.json();
+      } catch {
+        const textFallback = await res.text();
+        data = { reply: textFallback || "" };
+      }
 
       if (res.ok) {
+        const raw = data.reply || "(empty reply)";
+        const cleaned = stripMarkdown(raw);
         const botReply = {
           id: `${Date.now()}-a`,
           role: "assistant",
-          content: data.reply || "(empty reply)",
+          content: cleaned,
           ts: Date.now(),
         };
         setMessages((prev) => [...prev, botReply]);
       } else {
+        const errMsg = data?.error || data?.details || "unknown";
         setMessages((prev) => [
           ...prev,
           {
             id: `${Date.now()}-e`,
             role: "assistant",
-            content: `Error: ${data.error || "unknown"}`,
+            content: `Error: ${errMsg}`,
             ts: Date.now(),
           },
         ]);
+        Alert.alert("Server error", errMsg);
       }
     } catch (err) {
       setMessages((prev) => [
@@ -177,15 +248,13 @@ function Chat() {
 
       const data = await response.json();
       if (data.success) {
-        setText(data.text);
+        setText(data.text || "");
         setVoiceModalVisible(false);
       } else {
         Alert.alert("Error", "Could not understand audio. Please try again.");
-        console.error("Voice input error:", data.error);
       }
     } catch (error) {
       Alert.alert("Error", "Voice input failed. Please try again.");
-      console.error("Voice input failed:", error);
     } finally {
       setIsRecording(false);
       setVoiceModalVisible(false);
@@ -213,12 +282,7 @@ function Chat() {
     return (
       <View style={[styles.row, isUser ? styles.rowRight : styles.rowLeft]}>
         <View style={bubbleStyle}>
-          <Text
-            style={[
-              styles.contentText,
-              isUser ? styles.contentTextLight : styles.contentTextLight,
-            ]}
-          >
+          <Text style={[styles.contentText, styles.contentTextLight]}>
             {item.content}
           </Text>
           <Text
@@ -261,9 +325,7 @@ function Chat() {
           <Animated.View
             style={[
               styles.pulsingCircle,
-              {
-                transform: [{ scale: pulseAnim }],
-              },
+              { transform: [{ scale: pulseAnim }] },
             ]}
           >
             <Text style={styles.micIconLarge}>🎤</Text>
@@ -299,17 +361,89 @@ function Chat() {
     </Modal>
   );
 
+  const ModelSelectorModal = () => (
+    <Modal
+      visible={modelModalVisible}
+      transparent={true}
+      animationType="slide"
+      onRequestClose={() => setModelModalVisible(false)}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={[styles.modalContent, { width: "90%", maxWidth: 420 }]}>
+          <Text style={[styles.recordingText, { marginBottom: 8 }]}>
+            Select model
+          </Text>
+          <Text style={styles.recordingHint}>
+            Currently: {selectedModel?.name}
+          </Text>
+
+          <FlatList
+            data={MODELS}
+            keyExtractor={(m) => m.id}
+            style={{ marginTop: 12, width: "100%" }}
+            renderItem={({ item }) => {
+              const isSelected = item.name === selectedModel?.name;
+              return (
+                <TouchableOpacity
+                  onPress={() => {
+                    setSelectedModel(item);
+                    setModelModalVisible(false);
+                  }}
+                  style={[
+                    styles.modelRow,
+                    isSelected && { borderColor: THEME.accent, borderWidth: 1 },
+                  ]}
+                >
+                  <View>
+                    <Text style={{ color: THEME.text, fontWeight: "700" }}>
+                      {item.name}
+                    </Text>
+                    <Text style={{ color: THEME.textMuted, fontSize: 12 }}>
+                      {item.id}
+                    </Text>
+                  </View>
+                  {isSelected && (
+                    <Text style={{ color: THEME.accent }}>Selected</Text>
+                  )}
+                </TouchableOpacity>
+              );
+            }}
+          />
+
+          <View style={{ marginTop: 12, flexDirection: "row", gap: 8 }}>
+            <TouchableOpacity
+              style={styles.cancelButton}
+              onPress={() => setModelModalVisible(false)}
+            >
+              <Text style={styles.cancelButtonText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+
   return (
     <SafeAreaView
       style={[styles.safe, { paddingTop: androidTopPadding }]}
       edges={["top", "bottom"]}
     >
       <StatusBar barStyle="light-content" backgroundColor={THEME.card} />
-      {/* Header */}
       <View style={styles.header}>
         <View style={styles.statusDot} />
         <Text style={styles.headerTitle}>Eula Chat</Text>
-        <View style={{ width: 16 }} />
+
+        <TouchableOpacity
+          onPress={() => setModelModalVisible(true)}
+          style={{ marginLeft: "auto", paddingHorizontal: 8 }}
+        >
+          <Text style={{ color: THEME.textMuted, fontSize: 13 }}>
+            Model:{" "}
+            <Text style={{ color: THEME.text, fontWeight: "700" }}>
+              {selectedModel?.name}
+            </Text>
+          </Text>
+        </TouchableOpacity>
       </View>
 
       <KeyboardAvoidingView
@@ -372,6 +506,7 @@ function Chat() {
       </KeyboardAvoidingView>
 
       <VoiceModal />
+      <ModelSelectorModal />
     </SafeAreaView>
   );
 }
@@ -384,7 +519,6 @@ export default function App() {
   );
 }
 
-/* small hook for "typing..." dots animation */
 function useTypingDots(speed = 300) {
   const [i, setI] = useState(0);
   useEffect(() => {
@@ -418,16 +552,13 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     letterSpacing: 0.3,
   },
-
   chatSurface: {
     flex: 1,
     backgroundColor: THEME.bg,
   },
-
   row: { width: "100%", marginBottom: 8, paddingHorizontal: 6 },
   rowLeft: { alignItems: "flex-start" },
   rowRight: { alignItems: "flex-end" },
-
   bubble: {
     maxWidth: "86%",
     paddingVertical: 10,
@@ -444,15 +575,12 @@ const styles = StyleSheet.create({
   },
   user: { backgroundColor: THEME.user, borderTopRightRadius: 6 },
   bot: { backgroundColor: THEME.bot, borderTopLeftRadius: 6 },
-
   roundTopUser: { borderTopRightRadius: 16 },
   roundBottomUser: { borderBottomRightRadius: 6 },
   roundTopBot: { borderTopLeftRadius: 16 },
   roundBottomBot: { borderBottomLeftRadius: 6 },
-
   contentText: { fontSize: 16, lineHeight: 22 },
   contentTextLight: { color: THEME.text },
-
   time: {
     fontSize: 11,
     color: THEME.textMuted,
@@ -460,13 +588,11 @@ const styles = StyleSheet.create({
   },
   timeRight: { textAlign: "right" },
   timeLeft: { textAlign: "left" },
-
   typingBubble: {
     marginLeft: 12,
     marginBottom: 10,
     opacity: 0.9,
   },
-
   inputRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -521,8 +647,6 @@ const styles = StyleSheet.create({
   micIcon: {
     fontSize: 20,
   },
-
-  // New styles for Voice Input Modal
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0, 0, 0, 0.75)",
@@ -588,5 +712,14 @@ const styles = StyleSheet.create({
     color: "#081325",
     fontWeight: "600",
   },
+  modelRow: {
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: THEME.input,
+    marginBottom: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
 });
-
